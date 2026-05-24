@@ -1,0 +1,53 @@
+package m3u
+
+import (
+	"bufio"
+	"encoding/base64"
+	"fmt"
+	"io"
+	"regexp"
+	"strings"
+)
+
+// attrURLRe matches any quoted HTTP(S) URL in an M3U attribute value, e.g.:
+//
+//	tvg-logo="http://..." or url-tvg="https://..."
+var attrURLRe = regexp.MustCompile(`"(https?://[^"]+)"`)
+
+// Rewrite reads an M3U playlist from r and writes it to w, replacing every
+// HTTP(S) URL — whether a plain stream line or embedded in an attribute value
+// (tvg-logo, tvg-url, url-tvg, x-tvg-url, etc.) — with a proxied URL.
+func Rewrite(w io.Writer, r io.Reader, proxyBase string) error {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if isURL(line) {
+			line = proxyURL(proxyBase, line)
+		} else if strings.HasPrefix(line, "#") {
+			line = rewriteAttrs(line, proxyBase)
+		}
+		if _, err := fmt.Fprintln(w, line); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
+}
+
+// rewriteAttrs replaces all quoted HTTP(S) URLs in M3U directive lines.
+func rewriteAttrs(line, proxyBase string) string {
+	return attrURLRe.ReplaceAllStringFunc(line, func(match string) string {
+		inner := match[1 : len(match)-1] // strip surrounding quotes
+		return `"` + proxyURL(proxyBase, inner) + `"`
+	})
+}
+
+func isURL(line string) bool {
+	return strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://")
+}
+
+func proxyURL(base, upstream string) string {
+	return fmt.Sprintf("%s/proxy/stream?url=%s", base,
+		base64.URLEncoding.EncodeToString([]byte(upstream)))
+}

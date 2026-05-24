@@ -1,0 +1,18 @@
+services:
+  iptvp:
+    build: .
+    ports:
+      - "${PROXY_PORT:-8080}:${PROXY_PORT:-8080}"
+    environment:
+      # Public URL clients use to reach this proxy (no trailing slash)
+      PROXY_BASE_URL: ${PROXY_BASE_URL:-http://localhost:8080}
+      PROXY_PORT: ${PROXY_PORT:-8080}
+
+      # M3U playlist source (leave empty if not used)
+      M3U_URL: ${M3U_URL:-}
+
+      # Xtream Codes upstream (leave empty if not used)
+      XTREAM_BASE_URL: ${XTREAM_BASE_URL:-}
+      XTREAM_USERNAME: ${XTREAM_USERNAME:-}
+      XTREAM_PASSWORD: ${XTREAM_PASSWORD:-}
+    restart: unless-stopped
