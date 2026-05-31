@@ -46,6 +46,12 @@ Then `docker compose up --build`.
 
 ## Testing
 
-No automated tests. Verify by watching the container logs — look for `stream: HLS`, `stream: RAW`, and confirm segment URLs decode to the expected upstream.
+Run tests inside Docker (Go is not installed locally):
+
+```bash
+docker build --target builder -t janaz/iptvp-test . && docker run --rm janaz/iptvp-test sh -c "cd /src && go test ./..."
+```
+
+**Never use real provider URLs, domains, channel IDs, or tokens in tests.** Use `stream.example.com`, `upstream.example.com`, or similar RFC 2606 example domains. Real URLs leaked into git history require a force-push to clean up.
 
 When testing catch-up/rewind: the `catchup-source` attribute in the rewritten M3U should contain `{utc}` and `{lutc}` as literal text (not hidden in base64). TiViMate and similar players require these to be visible.
