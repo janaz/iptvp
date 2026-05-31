@@ -105,9 +105,40 @@ func TestServeStream_InvalidBase64(t *testing.T) {
 	}
 }
 
-func TestServeStream_ForwardsExtraParamsToUpstream(t *testing.T) {
-	// Core catch-up regression: extra query params (filled-in template vars)
-	// must be merged into the upstream URL before fetching.
+func TestServeCatchup_ForwardsExtraParamsToUpstream(t *testing.T) {
+	// Core catch-up: extra query params (filled-in template vars) must be
+	// merged into the upstream URL when going through /proxy/catchup.
+	var gotQuery url.Values
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(200)
+	}))
+	defer upstream.Close()
+
+	upstreamURL := upstream.URL + "/mono.m3u8?token=abc"
+	encoded := base64.URLEncoding.EncodeToString([]byte(upstreamURL))
+
+	h := &Handler{cfg: &config.Config{ProxyBaseURL: "http://proxy"}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET",
+		"/proxy/catchup?url="+encoded+"&utc=1748646600&lutc=1748650200", nil)
+	h.ServeCatchup(rec, req)
+
+	if gotQuery.Get("token") != "abc" {
+		t.Errorf("original token not forwarded; upstream query: %v", gotQuery)
+	}
+	if gotQuery.Get("utc") != "1748646600" {
+		t.Errorf("utc not forwarded; upstream query: %v", gotQuery)
+	}
+	if gotQuery.Get("lutc") != "1748650200" {
+		t.Errorf("lutc not forwarded; upstream query: %v", gotQuery)
+	}
+}
+
+func TestServeStream_DoesNotForwardExtraParams(t *testing.T) {
+	// Live streams must NOT have utc/lutc forwarded even if the player sends them.
+	// Only /proxy/catchup merges extra params.
 	var gotQuery url.Values
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query()
@@ -125,14 +156,14 @@ func TestServeStream_ForwardsExtraParamsToUpstream(t *testing.T) {
 		"/proxy/stream?url="+encoded+"&utc=1748646600&lutc=1748650200", nil)
 	h.ServeStream(rec, req)
 
+	if gotQuery.Get("utc") != "" {
+		t.Errorf("utc must not be forwarded by ServeStream, upstream saw: %v", gotQuery)
+	}
+	if gotQuery.Get("lutc") != "" {
+		t.Errorf("lutc must not be forwarded by ServeStream, upstream saw: %v", gotQuery)
+	}
 	if gotQuery.Get("token") != "abc" {
-		t.Errorf("original token not forwarded; upstream query: %v", gotQuery)
-	}
-	if gotQuery.Get("utc") != "1748646600" {
-		t.Errorf("utc not forwarded; upstream query: %v", gotQuery)
-	}
-	if gotQuery.Get("lutc") != "1748650200" {
-		t.Errorf("lutc not forwarded; upstream query: %v", gotQuery)
+		t.Errorf("original token missing: %v", gotQuery)
 	}
 }
 

@@ -47,10 +47,28 @@ func (h *Handler) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeStream proxies a stream whose URL is passed as ?url=<base64>.
-// Any extra query parameters beyond "url" are merged into the upstream URL,
-// which allows catch-up template variables ({utc}, {lutc}, etc.) that were
-// kept visible in the proxy URL to be forwarded to the upstream server.
 func (h *Handler) ServeStream(w http.ResponseWriter, r *http.Request) {
+	encoded := r.URL.Query().Get("url")
+	if encoded == "" {
+		http.Error(w, "missing url parameter", http.StatusBadRequest)
+		return
+	}
+
+	raw, err := base64.URLEncoding.DecodeString(encoded)
+	if err != nil {
+		http.Error(w, "invalid url parameter", http.StatusBadRequest)
+		return
+	}
+
+	stream.Pipe(w, r, string(raw), h.cfg.ProxyBaseURL)
+}
+
+// ServeCatchup handles catch-up/rewind requests where the player has substituted
+// time template variables (utc, lutc, etc.) into the URL. Extra query parameters
+// beyond "url" are merged into the upstream URL before fetching, so the upstream
+// receives the requested time range. Live stream requests use ServeStream instead,
+// which never forwards extra parameters.
+func (h *Handler) ServeCatchup(w http.ResponseWriter, r *http.Request) {
 	encoded := r.URL.Query().Get("url")
 	if encoded == "" {
 		http.Error(w, "missing url parameter", http.StatusBadRequest)

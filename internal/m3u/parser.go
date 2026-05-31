@@ -54,6 +54,11 @@ func proxyURL(base, upstream string) string {
 		base64.URLEncoding.EncodeToString([]byte(upstream)))
 }
 
+func catchupURL(base, upstream string) string {
+	return fmt.Sprintf("%s/proxy/catchup?url=%s", base,
+		base64.URLEncoding.EncodeToString([]byte(upstream)))
+}
+
 // proxyURLMaybeTemplate handles catch-up URLs that contain template variables
 // like {utc} and {lutc}. Template query-param values are kept visible in the
 // proxy URL so the player can substitute them; only the stable (non-template)
@@ -86,5 +91,5 @@ func proxyURLMaybeTemplate(base, upstream string) string {
 	}
 	sort.Strings(templateParts)
 	u.RawQuery = stable.Encode()
-	return proxyURL(base, u.String()) + "&" + strings.Join(templateParts, "&")
+	return catchupURL(base, u.String()) + "&" + strings.Join(templateParts, "&")
 }

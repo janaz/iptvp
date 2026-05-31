@@ -17,6 +17,10 @@ func wantProxyURL(base, upstream string) string {
 	return fmt.Sprintf("%s/proxy/stream?url=%s", base, b64(upstream))
 }
 
+func wantCatchupURL(base, upstream string) string {
+	return fmt.Sprintf("%s/proxy/catchup?url=%s", base, b64(upstream))
+}
+
 // ── proxyURL ──────────────────────────────────────────────────────────────
 
 func TestProxyURL(t *testing.T) {
@@ -43,6 +47,8 @@ func TestProxyURLMaybeTemplate_QueryTemplateVarsVisible(t *testing.T) {
 	// Bug fixed: catch-up URLs with {utc}/{lutc} in query params must keep
 	// those placeholders visible (not hidden inside base64) so the player
 	// can substitute them before requesting the URL.
+	// The URL must use /proxy/catchup (not /proxy/stream) so that live stream
+	// requests through /proxy/stream are never affected by time params.
 	upstream := "http://stream.example.com/ch123/mono.m3u8?token=abc&utc={utc}&lutc={lutc}"
 	got := proxyURLMaybeTemplate("http://proxy", upstream)
 
@@ -52,8 +58,8 @@ func TestProxyURLMaybeTemplate_QueryTemplateVarsVisible(t *testing.T) {
 	if !strings.Contains(got, "{lutc}") {
 		t.Errorf("{lutc} not visible in proxy URL: %q", got)
 	}
-	if !strings.HasPrefix(got, "http://proxy/proxy/stream?url=") {
-		t.Errorf("unexpected prefix: %q", got)
+	if !strings.HasPrefix(got, "http://proxy/proxy/catchup?url=") {
+		t.Errorf("must use /proxy/catchup endpoint, got: %q", got)
 	}
 }
 
@@ -63,7 +69,7 @@ func TestProxyURLMaybeTemplate_StableParamEncodedInBase64(t *testing.T) {
 	got := proxyURLMaybeTemplate("http://proxy", upstream)
 
 	// Extract the base64 portion (between "url=" and the next "&").
-	rest := strings.TrimPrefix(got, "http://proxy/proxy/stream?url=")
+	rest := strings.TrimPrefix(got, "http://proxy/proxy/catchup?url=")
 	b64part := strings.SplitN(rest, "&", 2)[0]
 	decoded, err := base64.URLEncoding.DecodeString(b64part)
 	if err != nil {
@@ -103,7 +109,7 @@ func TestProxyURLMaybeTemplate_MultipleTemplateVars(t *testing.T) {
 		}
 	}
 	// dur=60 (stable) must be in the base64.
-	rest := strings.TrimPrefix(got, "http://proxy/proxy/stream?url=")
+	rest := strings.TrimPrefix(got, "http://proxy/proxy/catchup?url=")
 	b64part := strings.SplitN(rest, "&", 2)[0]
 	decoded, _ := base64.URLEncoding.DecodeString(b64part)
 	if !strings.Contains(string(decoded), "dur=60") {

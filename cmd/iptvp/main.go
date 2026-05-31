@@ -25,6 +25,7 @@ func main() {
 	m3uH := m3u.NewHandler(cfg)
 	mux.HandleFunc("/m3u", m3uH.ServePlaylist)
 	mux.HandleFunc("/proxy/stream", m3uH.ServeStream)
+	mux.HandleFunc("/proxy/catchup", m3uH.ServeCatchup)
 
 	if cfg.STBPortalURL != "" {
 		sH := stalker.NewHandler(cfg)
@@ -80,10 +81,10 @@ func accessLog(next http.Handler) http.Handler {
 	})
 }
 
-// upstreamURL decodes the ?url= parameter for /proxy/stream requests, or
-// reconstructs the upstream path for Xtream stream routes.
+// upstreamURL decodes the ?url= parameter for /proxy/stream and /proxy/catchup
+// requests, or reconstructs the upstream path for Xtream stream routes.
 func upstreamURL(r *http.Request) string {
-	if r.URL.Path == "/proxy/stream" {
+	if r.URL.Path == "/proxy/stream" || r.URL.Path == "/proxy/catchup" {
 		if enc := r.URL.Query().Get("url"); enc != "" {
 			if b, err := base64.URLEncoding.DecodeString(enc); err == nil {
 				return string(b)
