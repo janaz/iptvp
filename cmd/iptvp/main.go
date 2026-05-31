@@ -10,6 +10,7 @@ import (
 
 	"github.com/janaz/iptvp/internal/config"
 	"github.com/janaz/iptvp/internal/m3u"
+	"github.com/janaz/iptvp/internal/stalker"
 	"github.com/janaz/iptvp/internal/xtream"
 )
 
@@ -24,6 +25,11 @@ func main() {
 	m3uH := m3u.NewHandler(cfg)
 	mux.HandleFunc("/m3u", m3uH.ServePlaylist)
 	mux.HandleFunc("/proxy/stream", m3uH.ServeStream)
+
+	if cfg.STBPortalURL != "" {
+		sH := stalker.NewHandler(cfg)
+		mux.HandleFunc("/portal.php", sH.ServePortal)
+	}
 
 	if cfg.XtreamBaseURL != "" {
 		xH := xtream.NewHandler(cfg)

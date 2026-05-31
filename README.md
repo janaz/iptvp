@@ -26,6 +26,8 @@ All configuration is via environment variables.
 | `XTREAM_BASE_URL` | auto from `M3U_URL` | Upstream Xtream server base URL |
 | `XTREAM_USERNAME` | auto from `M3U_URL` | Upstream Xtream username |
 | `XTREAM_PASSWORD` | auto from `M3U_URL` | Upstream Xtream password |
+| `STB_PORTAL_URL` | — | Upstream Stalker/STB portal base URL |
+| `STB_MAC` | — | Real MAC address registered with the provider |
 
 `PROXY_BASE_URL` and `PROXY_PORT` are independent — useful when the proxy sits behind a reverse proxy.
 
@@ -43,6 +45,7 @@ If `M3U_URL` is an Xtream `get.php` URL (e.g. `http://provider.com:8080/get.php?
 | `GET /live/{user}/{pass}/{id}.ts` | Xtream live stream proxy |
 | `GET /movie/{user}/{pass}/{id}.mp4` | Xtream VOD proxy |
 | `GET /series/{user}/{pass}/{id}.mkv` | Xtream series proxy |
+| `GET /portal.php` | Stalker/STB portal proxy |
 
 ## Quick start
 
@@ -84,6 +87,15 @@ Point TiViMate at `http://YOUR_IP:8080/m3u`.
 | Password | anything |
 
 The proxy ignores client credentials and substitutes the real upstream credentials internally.
+
+### TiViMate — Stalker/STB portal source
+
+| Field | Value |
+|---|---|
+| Portal URL | `http://YOUR_IP:8080/` |
+| MAC address | anything |
+
+The proxy ignores the client MAC and substitutes the real `STB_MAC` on every request to the upstream portal.
 
 ## Behind a reverse proxy
 

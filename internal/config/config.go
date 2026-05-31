@@ -14,6 +14,8 @@ type Config struct {
 	XtreamBaseURL  string
 	XtreamUsername string
 	XtreamPassword string
+	STBPortalURL   string
+	STBMAC         string
 }
 
 func Load() (*Config, error) {
@@ -25,6 +27,8 @@ func Load() (*Config, error) {
 	xtreamBase := strings.TrimRight(os.Getenv("XTREAM_BASE_URL"), "/")
 	xtreamUser := os.Getenv("XTREAM_USERNAME")
 	xtreamPass := os.Getenv("XTREAM_PASSWORD")
+	stbPortalURL := strings.TrimRight(os.Getenv("STB_PORTAL_URL"), "/")
+	stbMAC := os.Getenv("STB_MAC")
 
 	// Auto-detect Xtream config from M3U_URL when it follows the Xtream
 	// get.php format and the Xtream vars are not explicitly set.
@@ -47,6 +51,8 @@ func Load() (*Config, error) {
 		XtreamBaseURL:  xtreamBase,
 		XtreamUsername: xtreamUser,
 		XtreamPassword: xtreamPass,
+		STBPortalURL:   stbPortalURL,
+		STBMAC:         stbMAC,
 	}, nil
 }
 
