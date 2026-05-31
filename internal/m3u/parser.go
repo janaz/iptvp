@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -39,7 +41,7 @@ func Rewrite(w io.Writer, r io.Reader, proxyBase string) error {
 func rewriteAttrs(line, proxyBase string) string {
 	return attrURLRe.ReplaceAllStringFunc(line, func(match string) string {
 		inner := match[1 : len(match)-1] // strip surrounding quotes
-		return `"` + proxyURL(proxyBase, inner) + `"`
+		return `"` + proxyURLMaybeTemplate(proxyBase, inner) + `"`
 	})
 }
 
@@ -50,4 +52,39 @@ func isURL(line string) bool {
 func proxyURL(base, upstream string) string {
 	return fmt.Sprintf("%s/proxy/stream?url=%s", base,
 		base64.URLEncoding.EncodeToString([]byte(upstream)))
+}
+
+// proxyURLMaybeTemplate handles catch-up URLs that contain template variables
+// like {utc} and {lutc}. Template query-param values are kept visible in the
+// proxy URL so the player can substitute them; only the stable (non-template)
+// portion of the URL is base64-encoded. This preserves the placeholder syntax
+// while still routing the eventual request through the proxy.
+//
+// If template variables appear in the URL path (not query params), the URL is
+// returned as-is so the player can still substitute and fetch content directly.
+func proxyURLMaybeTemplate(base, upstream string) string {
+	if !strings.Contains(upstream, "{") {
+		return proxyURL(base, upstream)
+	}
+	u, err := url.Parse(upstream)
+	if err != nil || strings.Contains(u.Path, "{") {
+		return upstream
+	}
+	stable := url.Values{}
+	var templateParts []string
+	for k, vs := range u.Query() {
+		for _, v := range vs {
+			if strings.Contains(v, "{") {
+				templateParts = append(templateParts, k+"="+v)
+			} else {
+				stable.Set(k, v)
+			}
+		}
+	}
+	if len(templateParts) == 0 {
+		return proxyURL(base, upstream)
+	}
+	sort.Strings(templateParts)
+	u.RawQuery = stable.Encode()
+	return proxyURL(base, u.String()) + "&" + strings.Join(templateParts, "&")
 }

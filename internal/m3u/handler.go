@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/janaz/iptvp/internal/config"
 	"github.com/janaz/iptvp/internal/stream"
@@ -46,6 +47,9 @@ func (h *Handler) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeStream proxies a stream whose URL is passed as ?url=<base64>.
+// Any extra query parameters beyond "url" are merged into the upstream URL,
+// which allows catch-up template variables ({utc}, {lutc}, etc.) that were
+// kept visible in the proxy URL to be forwarded to the upstream server.
 func (h *Handler) ServeStream(w http.ResponseWriter, r *http.Request) {
 	encoded := r.URL.Query().Get("url")
 	if encoded == "" {
@@ -59,5 +63,35 @@ func (h *Handler) ServeStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stream.Pipe(w, r, string(raw), h.cfg.ProxyBaseURL)
+	upstreamURL := string(raw)
+	if extras := extraParams(r.URL.Query()); len(extras) > 0 {
+		upstreamURL = mergeParams(upstreamURL, extras)
+	}
+
+	stream.Pipe(w, r, upstreamURL, h.cfg.ProxyBaseURL)
+}
+
+func extraParams(q url.Values) url.Values {
+	out := url.Values{}
+	for k, vs := range q {
+		if k != "url" {
+			out[k] = vs
+		}
+	}
+	return out
+}
+
+func mergeParams(rawURL string, extra url.Values) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := u.Query()
+	for k, vs := range extra {
+		for _, v := range vs {
+			q.Set(k, v)
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
