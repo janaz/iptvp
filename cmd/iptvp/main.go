@@ -81,14 +81,22 @@ func accessLog(next http.Handler) http.Handler {
 	})
 }
 
-// upstreamURL decodes the ?url= parameter for /proxy/stream and /proxy/catchup
-// requests, or reconstructs the upstream path for Xtream stream routes.
+// upstreamURL reconstructs the upstream URL for logging: the base64 ?url= parameter
+// for /proxy/stream, the base64 prefix/suffix + template span for /proxy/catchup, or
+// the upstream path for Xtream stream routes.
 func upstreamURL(r *http.Request) string {
-	if r.URL.Path == "/proxy/stream" || r.URL.Path == "/proxy/catchup" {
-		if enc := r.URL.Query().Get("url"); enc != "" {
-			if b, err := base64.URLEncoding.DecodeString(enc); err == nil {
-				return string(b)
-			}
+	q := r.URL.Query()
+	if r.URL.Path == "/proxy/stream" {
+		if b, err := base64.URLEncoding.DecodeString(q.Get("url")); err == nil {
+			return string(b)
+		}
+		return ""
+	}
+	if r.URL.Path == "/proxy/catchup" {
+		prefix, err1 := base64.URLEncoding.DecodeString(q.Get("p"))
+		suffix, err2 := base64.URLEncoding.DecodeString(q.Get("s"))
+		if err1 == nil && err2 == nil {
+			return string(prefix) + q.Get("t") + string(suffix)
 		}
 		return ""
 	}

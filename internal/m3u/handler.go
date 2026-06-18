@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/janaz/iptvp/internal/config"
 	"github.com/janaz/iptvp/internal/stream"
@@ -63,53 +62,24 @@ func (h *Handler) ServeStream(w http.ResponseWriter, r *http.Request) {
 	stream.Pipe(w, r, string(raw), h.cfg.ProxyBaseURL)
 }
 
-// ServeCatchup handles catch-up/rewind requests where the player has substituted
-// time template variables (utc, lutc, etc.) into the URL. Extra query parameters
-// beyond "url" are merged into the upstream URL before fetching, so the upstream
-// receives the requested time range. Live stream requests use ServeStream instead,
-// which never forwards extra parameters.
+// ServeCatchup handles catch-up/rewind requests for template URLs produced by
+// proxyURLMaybeTemplate. The upstream URL is reassembled from three query params:
+// the base64-encoded stable prefix (p) and suffix (s), and the template span (t)
+// with the player's substituted time values. This keeps the upstream host and
+// credentials hidden while letting the player fill in the placeholders.
 func (h *Handler) ServeCatchup(w http.ResponseWriter, r *http.Request) {
-	encoded := r.URL.Query().Get("url")
-	if encoded == "" {
-		http.Error(w, "missing url parameter", http.StatusBadRequest)
-		return
-	}
-
-	raw, err := base64.URLEncoding.DecodeString(encoded)
+	q := r.URL.Query()
+	prefix, err := base64.URLEncoding.DecodeString(q.Get("p"))
 	if err != nil {
-		http.Error(w, "invalid url parameter", http.StatusBadRequest)
+		http.Error(w, "invalid p parameter", http.StatusBadRequest)
+		return
+	}
+	suffix, err := base64.URLEncoding.DecodeString(q.Get("s"))
+	if err != nil {
+		http.Error(w, "invalid s parameter", http.StatusBadRequest)
 		return
 	}
 
-	upstreamURL := string(raw)
-	if extras := extraParams(r.URL.Query()); len(extras) > 0 {
-		upstreamURL = mergeParams(upstreamURL, extras)
-	}
-
+	upstreamURL := string(prefix) + q.Get("t") + string(suffix)
 	stream.Pipe(w, r, upstreamURL, h.cfg.ProxyBaseURL)
-}
-
-func extraParams(q url.Values) url.Values {
-	out := url.Values{}
-	for k, vs := range q {
-		if k != "url" {
-			out[k] = vs
-		}
-	}
-	return out
-}
-
-func mergeParams(rawURL string, extra url.Values) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-	q := u.Query()
-	for k, vs := range extra {
-		for _, v := range vs {
-			q.Set(k, v)
-		}
-	}
-	u.RawQuery = q.Encode()
-	return u.String()
 }

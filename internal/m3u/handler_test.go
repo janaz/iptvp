@@ -5,83 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 
 	"github.com/janaz/iptvp/internal/config"
 )
-
-// ── extraParams ───────────────────────────────────────────────────────────
-
-func TestExtraParams_RemovesURLKey(t *testing.T) {
-	q := url.Values{
-		"url":  []string{"abc"},
-		"utc":  []string{"1234"},
-		"lutc": []string{"5678"},
-	}
-	extras := extraParams(q)
-	if _, ok := extras["url"]; ok {
-		t.Error("'url' key should be excluded from extras")
-	}
-	if extras.Get("utc") != "1234" {
-		t.Errorf("utc = %q, want 1234", extras.Get("utc"))
-	}
-	if extras.Get("lutc") != "5678" {
-		t.Errorf("lutc = %q, want 5678", extras.Get("lutc"))
-	}
-}
-
-func TestExtraParams_EmptyWhenOnlyURL(t *testing.T) {
-	q := url.Values{"url": []string{"abc"}}
-	extras := extraParams(q)
-	if len(extras) != 0 {
-		t.Errorf("expected empty extras, got %v", extras)
-	}
-}
-
-// ── mergeParams ───────────────────────────────────────────────────────────
-
-func TestMergeParams_AppendsToExistingQuery(t *testing.T) {
-	raw := "http://upstream/mono.m3u8?token=abc"
-	extra := url.Values{
-		"utc":  []string{"1748646600"},
-		"lutc": []string{"1748650200"},
-	}
-	got := mergeParams(raw, extra)
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := u.Query()
-	if q.Get("token") != "abc" {
-		t.Errorf("original token missing: %q", got)
-	}
-	if q.Get("utc") != "1748646600" {
-		t.Errorf("utc missing or wrong: %q", got)
-	}
-	if q.Get("lutc") != "1748650200" {
-		t.Errorf("lutc missing or wrong: %q", got)
-	}
-}
-
-func TestMergeParams_NoExistingQuery(t *testing.T) {
-	raw := "http://upstream/mono.m3u8"
-	extra := url.Values{"utc": []string{"123"}}
-	got := mergeParams(raw, extra)
-	if !strings.Contains(got, "utc=123") {
-		t.Errorf("utc not present in merged URL: %q", got)
-	}
-}
-
-func TestMergeParams_InvalidURL(t *testing.T) {
-	raw := "://not-a-url"
-	extra := url.Values{"utc": []string{"123"}}
-	got := mergeParams(raw, extra)
-	// Should return rawURL unchanged on parse error.
-	if got != raw {
-		t.Errorf("expected unchanged URL on parse error, got %q", got)
-	}
-}
 
 // ── ServeStream ───────────────────────────────────────────────────────────
 
@@ -105,34 +32,77 @@ func TestServeStream_InvalidBase64(t *testing.T) {
 	}
 }
 
-func TestServeCatchup_ForwardsExtraParamsToUpstream(t *testing.T) {
-	// Core catch-up: extra query params (filled-in template vars) must be
-	// merged into the upstream URL when going through /proxy/catchup.
+func TestServeCatchup_ReconstructsFromPrefixSpanSuffix(t *testing.T) {
+	// Core catch-up: the upstream URL is reassembled from the base64 prefix (p) and
+	// suffix (s) plus the substituted template span (t), with time values merged in.
 	var gotQuery url.Values
+	var gotPath string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query()
+		gotPath = r.URL.Path
 		w.Header().Set("Content-Type", "video/mp2t")
 		w.WriteHeader(200)
 	}))
 	defer upstream.Close()
 
-	upstreamURL := upstream.URL + "/mono.m3u8?token=abc"
-	encoded := base64.URLEncoding.EncodeToString([]byte(upstreamURL))
+	// Template: {upstream}/mono.m3u8?token=abc&utc={utc}&lutc={lutc}
+	prefix := base64.URLEncoding.EncodeToString([]byte(upstream.URL + "/mono.m3u8?token=abc&utc="))
+	suffix := base64.URLEncoding.EncodeToString([]byte(""))
 
 	h := &Handler{cfg: &config.Config{ProxyBaseURL: "http://proxy"}}
 	rec := httptest.NewRecorder()
+	// Player has substituted {utc}=…600 and {lutc}=…200 into the span.
 	req := httptest.NewRequest("GET",
-		"/proxy/catchup?url="+encoded+"&utc=1748646600&lutc=1748650200", nil)
+		"/proxy/catchup?p="+prefix+"&t=1748646600%26lutc%3D1748650200&s="+suffix, nil)
 	h.ServeCatchup(rec, req)
 
+	if gotPath != "/mono.m3u8" {
+		t.Errorf("upstream path = %q, want /mono.m3u8", gotPath)
+	}
 	if gotQuery.Get("token") != "abc" {
-		t.Errorf("original token not forwarded; upstream query: %v", gotQuery)
+		t.Errorf("original token not preserved; upstream query: %v", gotQuery)
 	}
 	if gotQuery.Get("utc") != "1748646600" {
-		t.Errorf("utc not forwarded; upstream query: %v", gotQuery)
+		t.Errorf("utc not reconstructed; upstream query: %v", gotQuery)
 	}
 	if gotQuery.Get("lutc") != "1748650200" {
-		t.Errorf("lutc not forwarded; upstream query: %v", gotQuery)
+		t.Errorf("lutc not reconstructed; upstream query: %v", gotQuery)
+	}
+}
+
+func TestServeCatchup_PathTemplateReconstructed(t *testing.T) {
+	// flussonic-style: the substituted span sits in the path, with a hidden token suffix.
+	var gotPath, gotToken string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotToken = r.URL.Query().Get("token")
+		w.WriteHeader(200)
+	}))
+	defer upstream.Close()
+
+	prefix := base64.URLEncoding.EncodeToString([]byte(upstream.URL + "/ch5/index-"))
+	suffix := base64.URLEncoding.EncodeToString([]byte(".m3u8?token=secret"))
+
+	h := &Handler{cfg: &config.Config{ProxyBaseURL: "http://proxy"}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/proxy/catchup?p="+prefix+"&t=1748-3600&s="+suffix, nil)
+	h.ServeCatchup(rec, req)
+
+	if gotPath != "/ch5/index-1748-3600.m3u8" {
+		t.Errorf("upstream path = %q, want /ch5/index-1748-3600.m3u8", gotPath)
+	}
+	if gotToken != "secret" {
+		t.Errorf("hidden token not preserved, got %q", gotToken)
+	}
+}
+
+func TestServeCatchup_InvalidPrefix(t *testing.T) {
+	h := &Handler{cfg: &config.Config{ProxyBaseURL: "http://proxy"}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/proxy/catchup?p=!!!notbase64!!!&t=x&s=", nil)
+	h.ServeCatchup(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
 	}
 }
 

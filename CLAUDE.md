@@ -9,7 +9,7 @@ An IPTV reverse proxy written in Go. It sits between an IPTV player and an upstr
 ```
 cmd/iptvp/main.go          — HTTP server, route table, access log
 internal/config/config.go  — env-var config, auto-detects Xtream creds from M3U_URL
-internal/m3u/              — M3U playlist proxy (/m3u, /proxy/stream)
+internal/m3u/              — M3U playlist proxy (/m3u, /proxy/stream, /proxy/catchup)
 internal/xtream/           — Xtream Codes API proxy (/player_api.php, /get.php, /xmltv.php, stream paths)
 internal/stream/proxy.go   — generic upstream pipe; detects HLS/DASH, rewrites manifests
 internal/hls/rewrite.go    — HLS manifest rewriter (segment lines + URI= attrs)
@@ -20,7 +20,13 @@ internal/dash/rewrite.go   — DASH MPD rewriter (absolute URLs)
 
 - **No credentials stored in rewritten URLs.** Xtream stream paths use `proxy/proxy` as dummy creds; the real creds are substituted at request time in `ServeXtreamStream`.
 - **`/proxy/stream?url=<base64>`** is the generic pipe for M3U streams and HLS segment/sub-manifest URLs. The base64 encodes the full upstream URL.
-- **Catch-up / template URLs.** `catchup-source` attributes in M3U files contain URL templates with `{utc}`, `{lutc}`, etc. These placeholders must remain visible (not inside base64) so the player can substitute them. The `proxyURLMaybeTemplate` function in `m3u/parser.go` splits template query params out of the base64-encoded stable part and appends them as plain query params. `ServeStream` merges any extra query params back into the upstream URL before fetching.
+- **Catch-up / template URLs.** `catchup-source` attributes in M3U files contain URL templates with `{utc}`, `{lutc}`, etc. These placeholders must remain visible (not inside base64) so the player can substitute them. `proxyURLMaybeTemplate` (`m3u/parser.go`) handles any template URL — placeholders in the **path** (flussonic/xc) or the **query** (shift/append) — by splitting at the first `{` and last `}`:
+  - `prefix` (before first `{`) and `suffix` (after last `}`) are base64-encoded → the upstream host and credentials stay hidden.
+  - the placeholder span (first `{` … last `}`) stays visible, percent-encoded except for the `{`/`}` delimiters.
+  - emitted as `/proxy/catchup?p=<b64prefix>&t=<span>&s=<b64suffix>`.
+  `ServeCatchup` (`m3u/handler.go`) reconstructs `remote = decode(p) + t + decode(s)` after the player substitutes the placeholders.
+- **Why two endpoints.** `/proxy/stream?url=<base64 full URL>` is for live/segment URLs and **ignores** any extra query params the player appends — this is deliberate: TiViMate auto-appends `utc`/`lutc` to live URLs (resume-from-last-position), and forwarding those would serve archive instead of live. Only `/proxy/catchup` carries time values back to the upstream.
+- **Synthesized & append-style catch-up.** Channels that advertise archive via `timeshift`/`catchup-days`/`tvg-rec` but ship no `catchup-source` get a shift-style source synthesized (`synthCatchupSource`). A relative (non-`http`) `catchup-source` (append style) is combined with the stream URL and normalized to `catchup="default"` (`rewriteAppendCatchup`). Both route through `proxyURLMaybeTemplate`, so all catch-up shapes share one encoding path.
 
 ## Build & release
 
