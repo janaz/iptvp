@@ -10,7 +10,9 @@ import (
 
 	"github.com/janaz/iptvp/internal/config"
 	"github.com/janaz/iptvp/internal/m3u"
+	"github.com/janaz/iptvp/internal/record"
 	"github.com/janaz/iptvp/internal/stalker"
+	"github.com/janaz/iptvp/internal/stream"
 	"github.com/janaz/iptvp/internal/xtream"
 )
 
@@ -18,6 +20,15 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config: %v", err)
+	}
+
+	if cfg.RecordMaxGB > 0 {
+		rec, err := record.New(cfg.RecordDir, cfg.RecordMaxGB)
+		if err != nil {
+			log.Fatalf("recorder: %v", err)
+		}
+		stream.SetRecorder(rec)
+		log.Printf("recording enabled: dir=%s maxGB=%.1f", cfg.RecordDir, cfg.RecordMaxGB)
 	}
 
 	mux := http.NewServeMux()

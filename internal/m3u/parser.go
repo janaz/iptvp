@@ -41,7 +41,7 @@ func Rewrite(w io.Writer, r io.Reader, proxyBase string) error {
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
 	var extinf string    // pending #EXTINF line awaiting its stream URL
-	var between []string  // directive/blank lines between #EXTINF and the URL
+	var between []string // directive/blank lines between #EXTINF and the URL
 
 	writeLine := func(s string) error {
 		_, err := fmt.Fprintln(w, s)

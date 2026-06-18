@@ -15,4 +15,13 @@ services:
       XTREAM_BASE_URL: ${XTREAM_BASE_URL:-}
       XTREAM_USERNAME: ${XTREAM_USERNAME:-}
       XTREAM_PASSWORD: ${XTREAM_PASSWORD:-}
+
+      # Recording: max total size of recordings in GB (0 = disabled).
+      # When set, watched media segments are saved under RECORD_DIR and the
+      # oldest files are deleted once the cap is exceeded.
+      RECORD_MAX_GB: ${RECORD_MAX_GB:-0}
+      RECORD_DIR: ${RECORD_DIR:-/recordings}
+    volumes:
+      # Host path for recordings (only used when RECORD_MAX_GB > 0)
+      - ${RECORD_HOST_DIR:-./recordings}:/recordings
     restart: unless-stopped

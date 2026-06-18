@@ -11,6 +11,7 @@ import (
 
 	"github.com/janaz/iptvp/internal/dash"
 	"github.com/janaz/iptvp/internal/hls"
+	"github.com/janaz/iptvp/internal/record"
 )
 
 var client = &http.Client{
@@ -18,6 +19,13 @@ var client = &http.Client{
 		return nil // follow all redirects
 	},
 }
+
+// recorder, when set, tees media segments to disk as they are streamed.
+var recorder *record.Recorder
+
+// SetRecorder enables recording of proxied media. Passing nil (the default)
+// disables it.
+func SetRecorder(r *record.Recorder) { recorder = r }
 
 const sniffLen = 512
 
@@ -81,7 +89,14 @@ func Pipe(w http.ResponseWriter, r *http.Request, upstreamURL, proxyBase string)
 	default:
 		log.Printf("stream: RAW  status=%d ct=%q url=%s peek=%q", resp.StatusCode, ct, finalURL, string(peek[:min(n, 80)]))
 		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, body) //nolint:errcheck
+		dst := io.Writer(w)
+		if recorder != nil {
+			if e := recorder.Start(ct, finalURL); e != nil {
+				defer e.Close() //nolint:errcheck
+				dst = io.MultiWriter(w, e)
+			}
+		}
+		io.Copy(dst, body) //nolint:errcheck
 	}
 }
 

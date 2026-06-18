@@ -14,6 +14,7 @@ internal/xtream/           — Xtream Codes API proxy (/player_api.php, /get.php
 internal/stream/proxy.go   — generic upstream pipe; detects HLS/DASH, rewrites manifests
 internal/hls/rewrite.go    — HLS manifest rewriter (segment lines + URI= attrs)
 internal/dash/rewrite.go   — DASH MPD rewriter (absolute URLs)
+internal/record/record.go  — optional on-disk recording of watched media segments
 ```
 
 ## Key design decisions
@@ -27,6 +28,7 @@ internal/dash/rewrite.go   — DASH MPD rewriter (absolute URLs)
   `ServeCatchup` (`m3u/handler.go`) reconstructs `remote = decode(p) + t + decode(s)` after the player substitutes the placeholders.
 - **Why two endpoints.** `/proxy/stream?url=<base64 full URL>` is for live/segment URLs and **ignores** any extra query params the player appends — this is deliberate: TiViMate auto-appends `utc`/`lutc` to live URLs (resume-from-last-position), and forwarding those would serve archive instead of live. Only `/proxy/catchup` carries time values back to the upstream.
 - **Synthesized & append-style catch-up.** Channels that advertise archive via `timeshift`/`catchup-days`/`tvg-rec` but ship no `catchup-source` get a shift-style source synthesized (`synthCatchupSource`). A relative (non-`http`) `catchup-source` (append style) is combined with the stream URL and normalized to `catchup="default"` (`rewriteAppendCatchup`). Both route through `proxyURLMaybeTemplate`, so all catch-up shapes share one encoding path.
+- **Recording (optional).** Set `RECORD_MAX_GB > 0` to record everything watched; `RECORD_DIR` is the destination (default `/recordings`). `stream.Pipe` tees the RAW branch (actual media — `.ts`/audio/video, filtered by content-type so manifests/logos/EPG are skipped) to disk via `io.MultiWriter`, so it costs no extra upstream fetch. Segments are saved per channel as `{channel}/{unixMillis}_{seq}.ts` — lexical order = chronological — and deduped by upstream URL (live manifests re-list segments). MPEG-TS concatenates losslessly: `cat ch963/*.ts | ffmpeg -i - -c copy out.mp4`. Oldest files are deleted when total size exceeds the cap (`Recorder.evict`). The container writes recordings as root (bind-mount permissions). No `ffmpeg` in the image — recording is raw `.ts`; remux is done externally.
 
 ## Build & release
 

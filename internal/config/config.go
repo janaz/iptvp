@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -16,6 +17,12 @@ type Config struct {
 	XtreamPassword string
 	STBPortalURL   string
 	STBMAC         string
+	// RecordMaxGB is the maximum total size of on-disk recordings, in gigabytes.
+	// 0 (the default) disables recording. When exceeded, the oldest files are deleted.
+	RecordMaxGB float64
+	// RecordDir is the destination directory for recordings (used only when
+	// RecordMaxGB > 0).
+	RecordDir string
 }
 
 func Load() (*Config, error) {
@@ -29,6 +36,9 @@ func Load() (*Config, error) {
 	xtreamPass := os.Getenv("XTREAM_PASSWORD")
 	stbPortalURL := strings.TrimRight(os.Getenv("STB_PORTAL_URL"), "/")
 	stbMAC := os.Getenv("STB_MAC")
+
+	recordMaxGB, _ := strconv.ParseFloat(os.Getenv("RECORD_MAX_GB"), 64)
+	recordDir := env("RECORD_DIR", "/recordings")
 
 	// Auto-detect Xtream config from M3U_URL when it follows the Xtream
 	// get.php format and the Xtream vars are not explicitly set.
@@ -53,6 +63,8 @@ func Load() (*Config, error) {
 		XtreamPassword: xtreamPass,
 		STBPortalURL:   stbPortalURL,
 		STBMAC:         stbMAC,
+		RecordMaxGB:    recordMaxGB,
+		RecordDir:      recordDir,
 	}, nil
 }
 
